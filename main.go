@@ -116,7 +116,7 @@ func main() {
 				filepath.Join(conf.SpellDir, file),
 				minio.GetObjectOptions{})
 			if err == nil {
-				fmt.Printf("> %-14.14s : ok\n", file)
+				fmt.Printf("> %-16.16s : ok\n", file)
 			} else {
 				log.Fatalln(file, ": failed!", err)
 			}
@@ -131,7 +131,7 @@ func main() {
 				filepath.Join(conf.SpellDir, file),
 				minio.PutObjectOptions{})
 			if err == nil {
-				fmt.Printf("> %-14.14s : ok (%d bytes)\n", file, n)
+				fmt.Printf("> %-16.16s : ok (%d bytes)\n", file, n)
 			} else {
 				log.Fatalln(file, ": failed!", err)
 			}
