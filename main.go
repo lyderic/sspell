@@ -5,11 +5,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/minio/minio-go"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+
+	minio "github.com/minio/minio-go"
 )
 
 type Configuration struct {
@@ -79,6 +80,23 @@ func main() {
 	fmt.Println("[R] MD5 sum:", remoteSum)
 
 	localFile := filepath.Join(conf.SpellDir, conf.DataFile)
+	if _, err = os.Stat(localFile); os.IsNotExist(err) {
+		fmt.Println("No local file:", localFile)
+		files := []string{conf.UTF8File, conf.DataFile}
+		fmt.Println("Getting from remote:")
+		for _, file := range files {
+			err := minioClient.FGetObject(
+				conf.Bucket,
+				file,
+				filepath.Join(conf.SpellDir, file),
+				minio.GetObjectOptions{})
+			if err == nil {
+				fmt.Printf("> %-16.16s : ok\n", file)
+			} else {
+				log.Fatalln(file, ": failed!", err)
+			}
+		}
+	}
 	localBytes, err := ioutil.ReadFile(localFile)
 	if err != nil {
 		log.Fatal(err)
@@ -108,7 +126,7 @@ func main() {
 
 	if localUnix < remoteUnix {
 		fmt.Println("Remote most recent.")
-    fmt.Println("Getting from remote:")
+		fmt.Println("Getting from remote:")
 		for _, file := range files {
 			err := minioClient.FGetObject(
 				conf.Bucket,
@@ -123,7 +141,7 @@ func main() {
 		}
 	} else if localUnix > remoteUnix {
 		fmt.Println("Local most recent.")
-    fmt.Println("Pushing to remote:")
+		fmt.Println("Pushing to remote:")
 		for _, file := range files {
 			n, err := minioClient.FPutObject(
 				conf.Bucket,
