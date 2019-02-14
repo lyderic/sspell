@@ -1,16 +1,22 @@
 package main
 
 import (
-	"crypto/md5"
-	"encoding/hex"
-	"encoding/json"
+	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	minio "github.com/minio/minio-go"
+)
+
+const (
+	VERSION = "0.1.0"
+)
+
+var (
+	debug bool
 )
 
 func init() {
@@ -19,32 +25,34 @@ func init() {
 
 func main() {
 
+	var showversion bool
 	configPath := filepath.Join(os.Getenv("HOME"), "mondes", "sspell.conf")
-	if len(os.Args) > 1 {
-		if os.Args[1] == "-f" {
-			configPath = os.Args[2]
+	flag.StringVar(&configPath, "f", configPath, "configuration file")
+	flag.BoolVar(&debug, "debug", false, "show debug information")
+	flag.BoolVar(&showversion, "version", false, "show version")
+	flag.Usage = usage
+	flag.Parse()
+
+	if len(flag.Args()) > 0 {
+		switch flag.Args()[0] {
+		case "version":
+			fmt.Println(VERSION)
+		default:
+			usage()
 		}
+		return
 	}
 
-	// Initialise default values
-	config.Endpoint = "minio.cybermoped.com:9000"
-	config.UseSSL = true
-	config.Bucket = "sspell"
-	config.UTF8File = "fr.utf-8.add"
+	if showversion {
+		fmt.Println(VERSION)
+		return
+	}
 
-	// Values above will be replaced by the ones on the config file, if found
-	configFile, err := os.Open(configPath)
-	if err != nil {
-		log.Fatal(err)
+	if debug {
+		fmt.Println("Configuration:", configPath)
 	}
-	defer configFile.Close()
-	decoder := json.NewDecoder(configFile)
-	err = decoder.Decode(&config)
-	if err != nil {
-		log.Fatalln("Decoding configuration file", configPath, "failed:", err)
-	}
-	config.DataFile = config.UTF8File + ".spl"
-	config.SpellDir = filepath.Join(os.Getenv("HOME"), ".vim", "spell")
+
+	configure(configPath)
 
 	minioClient, err := minio.New(config.Endpoint, config.KeyId, config.KeySecret, config.UseSSL)
 	if err != nil {
@@ -59,53 +67,54 @@ func main() {
 		log.Fatalln("Bucket", config.Bucket, "not found!")
 	}
 
-	remoteInfo, err := minioClient.StatObject(config.Bucket, config.DataFile, minio.StatObjectOptions{})
+	files := []string{config.UTF8File, config.BinaryFile}
+
+	remoteInfo, err := minioClient.StatObject(config.Bucket, config.BinaryFile, minio.StatObjectOptions{})
 	if err != nil {
 		log.Fatal(err)
 	}
-	remoteSum := remoteInfo.ETag
-	fmt.Println("[R] MD5 sum:", remoteSum)
+	remote.Sum = remoteInfo.ETag
+	fmt.Println("[R] MD5 sum:", remote.Sum)
 
-	localFile := filepath.Join(config.SpellDir, config.DataFile)
+	localFile := filepath.Join(config.SpellDir, config.BinaryFile)
 	if _, err = os.Stat(localFile); os.IsNotExist(err) {
 		fmt.Println("No local file:", localFile)
-		files := []string{config.UTF8File, config.DataFile}
 		getFromRemote(minioClient, files)
 	}
-	localBytes, err := ioutil.ReadFile(localFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-	localSum16Byte := md5.Sum(localBytes)
-	localSum := hex.EncodeToString(localSum16Byte[:])
-	fmt.Println("[L] MD5 Sum:", localSum)
+	local.Sum = md5sum(localFile)
+	fmt.Println("[L] MD5 Sum:", local.Sum)
 
-	if remoteSum == localSum {
+	if remote.Sum == local.Sum {
 		fmt.Println("No change.")
 		return
 	}
-
-	remoteLastModified := remoteInfo.LastModified
-	remoteUnix := remoteLastModified.Unix()
-	fmt.Printf("[R] ModTime: %-19.19s [UNIX:%d]\n", remoteLastModified, remoteUnix)
-
+	remote.LastModified = remoteInfo.LastModified
+	remote.Unix = remote.LastModified.Unix()
+	displayTime("R", remote.LastModified, remote.Unix)
 	localInfo, err := os.Stat(localFile)
 	if err != nil {
 		log.Fatal(err)
 	}
-	localLastModified := localInfo.ModTime()
-	localUnix := localLastModified.Unix()
-	fmt.Printf("[L] ModTime: %-19.19s [UNIX:%d]\n", localLastModified, localUnix)
-
-	files := []string{config.UTF8File, config.DataFile}
-
-	if localUnix < remoteUnix {
+	local.LastModified = localInfo.ModTime()
+	local.Unix = local.LastModified.Unix()
+	displayTime("L", local.LastModified, local.Unix)
+	if local.Unix < remote.Unix {
 		fmt.Println("Remote most recent.")
 		getFromRemote(minioClient, files)
-	} else if localUnix > remoteUnix {
+	} else if local.Unix > remote.Unix {
 		fmt.Println("Local most recent.")
 		putToRemote(minioClient, files)
 	} else {
 		log.Fatal("ERROR: cannot evaluate time difference!")
 	}
+}
+
+func displayTime(direction string, lastModified time.Time, unix int64) {
+	fmt.Printf("[%s] ModTime: %-19.19s [UNIX:%d]\n", direction, lastModified, unix)
+}
+
+func usage() {
+	fmt.Println("sspell, version", VERSION, "(c) Lyderic Landry, London 2019")
+	fmt.Println("Usage: sspell [-h] [-f filepath]")
+	flag.PrintDefaults()
 }
