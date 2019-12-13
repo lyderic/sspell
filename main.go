@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	VERSION = "0.1.0"
+	VERSION = "0.1.1"
 )
 
 var (
@@ -71,8 +71,12 @@ func main() {
 
 	remoteInfo, err := minioClient.StatObject(config.Bucket, config.BinaryFile, minio.StatObjectOptions{})
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("Missing files on remote!!!")
+		transfer(TO, config.UTF8File, minioClient)
+		transfer(TO, config.BinaryFile, minioClient)
+		return
 	}
+	fmt.Println(">>>>>", remoteInfo)
 	remote.Sum = remoteInfo.ETag
 	fmt.Println("[R] MD5 sum:", remote.Sum)
 
